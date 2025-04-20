@@ -17,10 +17,6 @@ Some of users will receive warnings about time zone, it will not affect the inst
 
 There are two functions and one data set in the package now.
 
-The function wildboott is designed to OLS linear models.
-
-The function is used to get accurate and precise inference from small cluster sizes. Through  (restricted) wild clustered bootstrap-t to get p-values for OLS models, the function considerably reduces the probability of over rejection of the null hypotheses.The default distribution used to reconstruct the residuals is Rademacher. When cluster size is smaller than 12, the algorithm will suggest using "six - point" distribution instead.
-
 Example:
 ```r
 data(test_data)  # input data
