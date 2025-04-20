@@ -20,12 +20,21 @@
 
 estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
 
+
+  if(is.data.frame(Z)==FALSE){Z <- data.frame(Z=Z)}
+  if(sum(is.na(Z))>0 ){stop("Z has NAs; please remove or fill in NAs first")}
+  if(length(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
+
   n_z <- ncol(Z)
   n_y <- ncol(Y)
 
   if(n_y==1){stop("The function needs more than 1 outcome measures")}
 
-  if(is.data.frame(Z)==FALSE){Z <- data.frame(Z=Z)}
+  for (j in 1:n_y) {
+    if(sum(is.na(Y[,j]))>0 ){stop("Y has NAs; please remove or fill in NAs first")}
+  }
+
+
 
   ### recall deal with NA
 

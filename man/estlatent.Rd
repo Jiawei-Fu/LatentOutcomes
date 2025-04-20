@@ -27,6 +27,6 @@ Estimate the Causal Effects with Latent Outcomes
 \examples{
 \dontrun{
 data(test_data)  # input data
-estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_equal",IV_Y=T,tau=T)
+estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
 }
 }
