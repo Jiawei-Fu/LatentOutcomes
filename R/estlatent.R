@@ -13,6 +13,7 @@
 #' data(test_data)  # input data
 #' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
 #'}
+#'@references Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
 #'@import lavaan
 #'@import momentfit
 #'@importFrom stats pnorm printCoefmat
