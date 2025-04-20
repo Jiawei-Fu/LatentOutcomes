@@ -4,7 +4,7 @@
 \alias{estlatent}
 \title{Estimate the Causal Effects with Latent Outcomes}
 \usage{
-estlatent(Z, Y, X = NULL, eta = 1, method = "sem")
+estlatent(Z, Y, X = NULL, eta = 1, method = "sem", IV_Y = T, tau = T)
 }
 \arguments{
 \item{Z}{a vector of Treatment variable.}
@@ -16,7 +16,17 @@ estlatent(Z, Y, X = NULL, eta = 1, method = "sem")
 \item{eta}{tbd}
 
 \item{method}{estimators options.}
+
+\item{IV_Y}{Whether use other outcome measures as IVs}
+
+\item{tau}{For GMM only. If not, calculate sample average in two groups}
 }
 \description{
 Estimate the Causal Effects with Latent Outcomes
+}
+\examples{
+\dontrun{
+data(test_data)  # input data
+estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_equal",IV_Y=T,tau=T)
+}
 }
