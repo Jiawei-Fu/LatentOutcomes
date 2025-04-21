@@ -132,7 +132,7 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
     tau <- tau
     dat <- cbind(Y,Z)
     g_opt <- function(theta, dat) {
-      gmm_equal(theta, dat, IV_Y = IV_Y, tau = tau)
+      gmm_opt(theta, dat, IV_Y = IV_Y, tau = tau)
     }
     # starting value
     if(tau==T){
