@@ -29,7 +29,7 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   message("You just ran hello_msg(), and x = ", nrow(Z))
   message("You just ran hello_msg(), and x = ", nrow(Y))
 
-  if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
+#  if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
 
   n_z <- ncol(Z)
   n_y <- ncol(Y)
