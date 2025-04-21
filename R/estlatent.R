@@ -51,6 +51,10 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   ld_text <-  paste0("eta =~ 1*", paste0(colnames(Y),collapse = "+"))
   var_text <- paste0(colnames(Z),"~~",  colnames(Z))
 
+  cat("—— model specification ——\n")
+  cat(mod_c, sep = "\n")
+  cat("\n———————————————\n")
+
   mod_c <- paste(ld_text,reg_text,var_text,sep="\n")
 
   sem_tmp <- sem(mod_c,data=dat)
