@@ -10,7 +10,7 @@
 #'
 #'@examples
 #' \dontrun{
-#' data(test_data)  # input data
+#' data(test_dat)  # input data
 #' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
 #'}
 #'@references Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
@@ -24,7 +24,7 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
 
   if(is.data.frame(Z)==FALSE){Z <- data.frame(Z=Z)}
   if(sum(is.na(Z))>0 ){stop("Z has NAs; please remove or fill in NAs first")}
-  if(length(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
+  if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
 
   n_z <- ncol(Z)
   n_y <- ncol(Y)

@@ -26,7 +26,10 @@ Estimate the Causal Effects with Latent Outcomes
 }
 \examples{
 \dontrun{
-data(test_data)  # input data
+data(test_dat)  # input data
 estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
 }
+}
+\references{
+Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
 }
