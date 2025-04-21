@@ -26,10 +26,10 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
 
   if(sum(is.na(Z))>0 ){stop("Z has NAs; please remove or fill in NAs first")}
 
-  message("You just ran hello_msg(), and x = ", nrow(Z))
-  message("You just ran hello_msg(), and x = ", nrow(Y))
+  message("z = ", nrow(Z))
+  message("y = ", nrow(Y))
 
-#  if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
+  if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
 
   n_z <- ncol(Z)
   n_y <- ncol(Y)
@@ -55,11 +55,11 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   ld_text <-  paste0("eta =~ 1*", paste0(colnames(Y),collapse = "+"))
   var_text <- paste0(colnames(Z),"~~",  colnames(Z))
 
+  mod_c <- paste(ld_text,reg_text,var_text,sep="\n")
+
   cat("—— model specification ——\n")
   cat(mod_c, sep = "\n")
   cat("\n———————————————\n")
-
-  mod_c <- paste(ld_text,reg_text,var_text,sep="\n")
 
   sem_tmp <- sem(mod_c,data=dat)
 
