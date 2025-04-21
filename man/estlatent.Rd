@@ -15,11 +15,11 @@ estlatent(Z, Y, X = NULL, eta = 1, method = "sem", IV_Y = T, tau = T)
 
 \item{eta}{tbd}
 
-\item{method}{estimators options.}
+\item{method}{estimation methods options. One can choose from "sem", "gmm-equal", and "gmm_opt". The default option is "sem".}
 
 \item{IV_Y}{Whether use other outcome measures as IVs}
 
-\item{tau}{For GMM only. If not, calculate sample average in two groups}
+\item{tau}{For gmm_ methods only. Default is TRUE: gmm will use only one moment conditions to estimate LTE. If it is FALSE, gmm methods use two moment conditions (two averages in treatment and control groups) to estimate LTE.}
 }
 \description{
 Estimate the Causal Effects with Latent Outcomes
@@ -28,6 +28,8 @@ Estimate the Causal Effects with Latent Outcomes
 \dontrun{
 data(test_dat)  # input data
 estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
+estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_equal",IV_Y=T,tau=T)
+estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_opt",IV_Y=T,tau=T)
 }
 }
 \references{

@@ -3,15 +3,17 @@
 #'@param Z a vector of Treatment variable.
 #'@param Y a data frame that includes the measured outcomes. The outcome in the first column will be set as lambda=1.
 #'@param X an optional data frame that includes other covariates. The defauly is NULL.
-#'@param method estimators options.
+#'@param method estimation methods options. One can choose from "sem", "gmm-equal", and "gmm_opt". The default option is "sem".
 #'@param eta tbd
-#'@param tau For GMM only. If not, calculate sample average in two groups
+#'@param tau For gmm_ methods only. Default is TRUE: gmm will use only one moment conditions to estimate LTE. If it is FALSE, gmm methods use two moment conditions (two averages in treatment and control groups) to estimate LTE.
 #'@param IV_Y Whether use other outcome measures as IVs
 #'
 #'@examples
 #' \dontrun{
 #' data(test_dat)  # input data
 #' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
+#' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_equal",IV_Y=T,tau=T)
+#' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_opt",IV_Y=T,tau=T)
 #'}
 #'@references Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
 #'@import lavaan
@@ -25,9 +27,6 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   if(is.data.frame(Z)==FALSE){Z <- data.frame(Z=Z)}
 
   if(sum(is.na(Z))>0 ){stop("Z has NAs; please remove or fill in NAs first")}
-
-  message("z = ", nrow(Z))
-  message("y = ", nrow(Y))
 
   if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
 
