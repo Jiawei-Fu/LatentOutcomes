@@ -14,6 +14,7 @@ devtools::install_github("Jiawei-Fu/LatentOutcomes")
 library(LatentOutcomes)
 ```
 Some of users will receive warnings about time zone, it will not affect the installation.
+If you have installed the old version, please remove.packages("LatentOutcomes"), re-install, and run .rs.restartR()
 
 Main function:
 
