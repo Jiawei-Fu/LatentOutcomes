@@ -26,8 +26,8 @@ gmm_opt <- function(theta,dat,mod=NULL,n_y,w_idx,iv_load_idx,iv_reg_idx,iv_names
 
   n_load_mom <- 0
   for(j in 2:n_y){
-    own_j <- which(iv_names_norm == y_names_norm[j])
-    n_load_mom <- n_load_mom + (n_iv_load - length(own_j))
+    bad_j <- which(iv_names_norm %in% c(y_names_norm[1], y_names_norm[j]))
+    n_load_mom <- n_load_mom + (n_iv_load - length(bad_j))
   }
   tot_mom <- n_load_mom + 1 + n_y + 1 + n_iv_reg
 
@@ -39,8 +39,8 @@ gmm_opt <- function(theta,dat,mod=NULL,n_y,w_idx,iv_load_idx,iv_reg_idx,iv_names
 
     ### Moment conditions for lambda (IV estimation)
     rj <- Y[,j]-theta[j]*Y[,1]
-    own_j <- which(iv_names_norm == y_names_norm[j])
-    use_k <- setdiff(seq_len(n_iv_load), own_j)
+    bad_j <- which(iv_names_norm %in% c(y_names_norm[1], y_names_norm[j]))
+    use_k <- setdiff(seq_len(n_iv_load), bad_j)
     for(k in use_k){
       mom[[indx]] <- rj * IV_load[,k]
       indx <- indx + 1
