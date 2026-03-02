@@ -1,19 +1,34 @@
 #' Estimate the Causal Effects with Latent Outcomes
 #'
-#'@param Z a vector of Treatment variable.
-#'@param Y a data frame that includes the measured outcomes. The outcome in the first column will be set as lambda=1.
-#'@param X an optional data frame that includes other covariates. The defauly is NULL.
-#'@param method estimation methods options. One can choose from "sem", "gmm-equal", and "gmm_opt". The default option is "sem".
-#'@param eta tbd
-#'@param tau For gmm_ methods only. Default is TRUE: gmm will use only one moment conditions to estimate LTE. If it is FALSE, gmm methods use two moment conditions (two averages in treatment and control groups) to estimate LTE.
-#'@param IV_Y Whether use other outcome measures as IVs
-#'
+#' @param mod Optional regression specification for the latent regression.
+#'   Recommended form is RHS-only, e.g. `"~Z+x1+x2"`. Also accepts `"Y~..."` or `"eta~..."`.
+#'   If `NULL`, the default model is "~Z", which only contains the treatment variable.
+#' @param Z Treatment input. Can be:
+#'   a numeric/logical vector,
+#'   a one-column data frame/matrix,
+#'   or a single character column name when `data` is provided.
+#' @param Y Measured outcomes. Can be:
+#'   a data frame/matrix with 2+ outcome columns,
+#'   or a character vector of outcome column names when `data` is provided.
+#'   The first outcome is the reference loading (`lambda_1 = 1`).
+#' @param data Optional data frame used to resolve character inputs in `Z` and `Y`,
+#'   and to supply covariates referenced in `mod`.
+#' @param method Estimation method: `"sem"` or `"gmm"` (default `"sem"`).
+#' @param IV_Y Optional character vector of IV names for loading moments in GMM.
+#'   Names must come from covariates implied by `mod` and/or outcome names.
+#'   Default is treatment `Z`. Regression moments always use covariates from `mod` as their own IVs.
+#'   For `method = "sem"`, `IV_Y` is not used; SEM uses all variables as IVs.
+#' @param opt Logical. For `method="gmm"`, `TRUE` (default) uses efficient two-step GMM;
+#'   `FALSE` uses one-step GMM with identity weighting.
 #'@examples
 #' \dontrun{
 #' data(test_dat)  # input data
-#' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
-#' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_equal",IV_Y=T,tau=T)
-#' estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_opt",IV_Y=T,tau=T)
+#' m1 <- estlatent(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="sem")
+#' summary(m1) # sem model
+#' m2 <- estlatent(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y2"), opt=TRUE)
+#' summary(m2) # gmm model, using Z and Y2 as IVs for the factor loadings
+#' m3 <- estlatent(mod="~Z+x1+x2", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y1","Y2","Y3"), opt=TRUE) # control covariates x1 and x2, using Z, Y1, Y2, and Y3 as IVs for the factor loadings
+#' summary(m3)
 #'}
 #'@references Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
 #'@import lavaan
@@ -21,16 +36,40 @@
 #'@importFrom stats pnorm printCoefmat
 #'@export
 
-estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
+estlatent <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE){
 
+  if(!is.null(data)){
+    if(!is.data.frame(data)){stop("data must be a data.frame")}
+    if(is.character(Z) && length(Z)==1){
+      if(!(Z %in% colnames(data))){stop("Z not found in data")}
+      Z <- data[[Z]]
+    }
+    if(is.character(Y)){
+      if(any(!Y %in% colnames(data))){stop("Some Y columns are not found in data")}
+      Y <- data[,Y,drop=FALSE]
+    }
+  }
 
-  if(is.data.frame(Z)==FALSE){Z <- data.frame(Z=Z)}
+  if(is.data.frame(Z)==FALSE){
+    if(is.matrix(Z)){
+      Z <- as.data.frame(Z, check.names = FALSE)
+    }else{
+      Z <- data.frame(Z=Z)
+    }
+  }
+  if(is.data.frame(Y)==FALSE){
+    Y <- as.data.frame(Y, check.names = FALSE)
+  }
+
+  if(is.null(colnames(Z))){colnames(Z) <- paste0("Z",seq_len(ncol(Z)))}
+  if(is.null(colnames(Y))){colnames(Y) <- paste0("Y",seq_len(ncol(Y)))}
 
   if(sum(is.na(Z))>0 ){stop("Z has NAs; please remove or fill in NAs first")}
 
   if(nrow(Z)!=nrow(Y)){stop("Y and Z have different numbers")}
+  if(!is.logical(opt) || length(opt)!=1 || is.na(opt)){stop("opt must be TRUE or FALSE")}
+  if(!(method %in% c("sem","gmm"))){stop("method must be one of 'sem' or 'gmm'")}
 
-  n_z <- ncol(Z)
   n_y <- ncol(Y)
 
   if(n_y==1){stop("The function needs more than 1 outcome measures")}
@@ -40,41 +79,114 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   }
 
 
-  ### recall deal with NA
+  ### sem prepare (flexible model specification)
+  cov_dat <- if(!is.null(data)) data else Z
 
-  ### sem prepare
-  if(is.null(X)){
-    reg_text <- paste0("eta ~ ",colnames(Z))
-    dat <- cbind(Z,Y)
+  if(is.null(mod)){
+    rhs_text <- colnames(Z)[1]
   }else{
-    reg_text <- paste0("eta ~ ",colnames(Z),"+", paste0(colnames(X),collapse = "+"))
-    dat <- cbind(Z,Y,X)
+    if(!is.character(mod) || length(mod)!=1){stop("mod must be a single character string")}
+    mod_txt <- trimws(mod)
+    if(startsWith(mod_txt,"~")){
+      rhs_text <- trimws(sub("^~","",mod_txt))
+    }else if(grepl("~",mod_txt,fixed=TRUE)){
+      parts <- strsplit(mod_txt,"~",fixed=TRUE)[[1]]
+      if(length(parts)!=2){stop("mod must be in the form 'lhs ~ rhs'")}
+      lhs <- trimws(parts[1])
+      rhs_text <- trimws(parts[2])
+      if(nchar(lhs)>0 && !(lhs %in% c("Y","eta"))){stop("mod lhs must be 'Y' or 'eta' (or omit lhs and use '~rhs')")}
+    }else{
+      rhs_text <- mod_txt
+    }
+    if(nchar(rhs_text)==0){stop("mod rhs is empty")}
   }
 
+  mm <- tryCatch(
+    model.matrix(as.formula(paste0("~",rhs_text)), data = cov_dat),
+    error = function(e) stop("Variables in mod must be available in `data` (or in `Z` when `data` is NULL).")
+  )
+  if("(Intercept)" %in% colnames(mm)){
+    mm <- mm[,colnames(mm)!="(Intercept)",drop=FALSE]
+  }
+  if(ncol(mm)==0){stop("mod produced no predictors after removing intercept")}
+  colnames(mm) <- make.names(colnames(mm), unique = TRUE)
+  cov_mm <- data.frame(mm, check.names = FALSE)
+
+  z_name <- make.names(colnames(Z)[1])
+  if(!(z_name %in% colnames(cov_mm))){
+    stop("mod must include the treatment variable (first column of Z)")
+  }
+  x_names <- setdiff(colnames(cov_mm), z_name)
+  n_x <- length(x_names)
+  w_names <- colnames(cov_mm)
+
+  ## Build IV sets for GMM:
+  ## iv_load (user-specified) for loading moments;
+  ## iv_reg automatically uses covariates from mod
+  iv_pool <- cbind(cov_mm, Y)
+  if(is.null(IV_Y)){
+    iv_names_load <- z_name
+  }else{
+    if(!is.character(IV_Y)){stop("IV_Y must be a character vector of variable names")}
+    iv_names_load <- unique(IV_Y)
+  }
+  if(any(!iv_names_load %in% colnames(iv_pool))){
+    stop("Some IV names are not found in available variables (covariates from mod + outcomes)")
+  }
+  iv_load_mm <- iv_pool[,iv_names_load,drop=FALSE]
+  iv_names_reg <- colnames(cov_mm)
+  iv_reg_mm <- cov_mm[,iv_names_reg,drop=FALSE]
+  y_names <- colnames(Y)
+  n_iv_load <- ncol(iv_load_mm)
+  n_iv_reg <- ncol(iv_reg_mm)
+  n_w <- ncol(cov_mm)
+
+  reg_text <- paste0("eta ~ ",paste(colnames(cov_mm),collapse = "+"))
+  dat <- cbind(cov_mm,Y)
+
   ld_text <-  paste0("eta =~ 1*", paste0(colnames(Y),collapse = "+"))
-  var_text <- paste0(colnames(Z),"~~",  colnames(Z))
+  var_text <- paste0(z_name,"~~",z_name)
 
   mod_c <- paste(ld_text,reg_text,var_text,sep="\n")
-
-  cat("—— model specification ——\n")
-  cat(mod_c, sep = "\n")
-  cat("\n———————————————\n")
 
   sem_tmp <- sem(mod_c,data=dat)
 
   ### sem results
 
-  sem_lambda_est <- summary(sem_tmp)$pe[1:n_y,5]
-  sem_lambda_se <- summary(sem_tmp)$pe[1:n_y,6]
-  sem_lambda_p <- summary(sem_tmp)$pe[1:n_y,8]
-  sem_lambda_z <- summary(sem_tmp)$pe[1:n_y,7]
-  sem_beta_est <- summary(sem_tmp)$pe[n_y+1,5]
-  sem_beta_se <- summary(sem_tmp)$pe[n_y+1,6]
-  sem_beta_p <- summary(sem_tmp)$pe[n_y+1,8]
-  sem_beta_z <- summary(sem_tmp)$pe[n_y+1,7]
-  sem_eta_var <- summary(sem_tmp)$pe[2*n_y+3,5]
+  pe <- summary(sem_tmp)$pe
 
-  sem_var_y <- summary(sem_tmp)$pe[(n_y+3):(2*n_y+2),5]
+  ld <- pe[pe$lhs=="eta" & pe$op=="=~",]
+  ld_est <- setNames(ld$est,ld$rhs)
+  ld_se <- setNames(ld$se,ld$rhs)
+  ld_z <- setNames(ld$z,ld$rhs)
+  ld_p <- setNames(ld$pvalue,ld$rhs)
+  sem_lambda_est <- as.numeric(ld_est[colnames(Y)])
+  sem_lambda_se <- as.numeric(ld_se[colnames(Y)])
+  sem_lambda_z <- as.numeric(ld_z[colnames(Y)])
+  sem_lambda_p <- as.numeric(ld_p[colnames(Y)])
+
+  rg <- pe[pe$lhs=="eta" & pe$op=="~",]
+  rg_est <- setNames(rg$est,rg$rhs)
+  rg_se <- setNames(rg$se,rg$rhs)
+  rg_z <- setNames(rg$z,rg$rhs)
+  rg_p <- setNames(rg$pvalue,rg$rhs)
+
+  if(!(z_name %in% names(rg_est))){stop("SEM result does not contain treatment coefficient")}
+  sem_beta_est <- as.numeric(rg_est[z_name])
+  sem_beta_se <- as.numeric(rg_se[z_name])
+  sem_beta_z <- as.numeric(rg_z[z_name])
+  sem_beta_p <- as.numeric(rg_p[z_name])
+
+  if(n_x>0){
+    sem_x_est <- as.numeric(rg_est[x_names])
+    sem_x_se <- as.numeric(rg_se[x_names])
+    sem_x_z <- as.numeric(rg_z[x_names])
+    sem_x_p <- as.numeric(rg_p[x_names])
+  }
+
+  sem_eta_var <- pe$est[pe$lhs=="eta" & pe$op=="~~" & pe$rhs=="eta"][1]
+  yv <- pe[pe$op=="~~" & pe$lhs==pe$rhs & pe$lhs %in% colnames(Y),]
+  sem_var_y <- as.numeric(setNames(yv$est,yv$lhs)[colnames(Y)])
 
   if(method=="sem"){
     final_lambda_est <- sem_lambda_est
@@ -85,81 +197,65 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
     final_beta_se <- sem_beta_se
     final_beta_z <- sem_beta_z
     final_beta_p <- sem_beta_p
-  }
 
-  ### equal
-  if(method=="gmm_equal"){
-    IV_Y <- IV_Y
-    tau <- tau
-    dat <- cbind(Y,Z)
-    g_equal <- function(theta, dat) {
-      gmm_equal(theta, dat, IV_Y = IV_Y, tau = tau)
-    }
-    # starting value
-    if(tau==T){
-    theta_s <- c(rep(1,n_y-1),sem_lambda_est[2:n_y],sem_beta_est)
-    res_equal <- momentModel(g_equal,dat,theta0=theta_s,vcov="iid")
-    rec_gmm_equal <- gmmFit(res_equal)
-    final_lambda_est <- c(1,coef(rec_gmm_equal)[n_y:(2*n_y-2)])
-    final_lambda_se <- c(0,sqrt(diag(vcov(rec_gmm_equal))[n_y:(2*n_y-2)]))
-    final_lambda_z <- c(NA,final_lambda_est[-1]/final_lambda_se[-1])
-    final_lambda_p <- 2 * (1 - pnorm(abs(final_lambda_z)))   # two‑sided
-    final_beta_est <- coef(rec_gmm_equal)[2*n_y-1]
-    final_beta_se <- sqrt(diag(vcov(rec_gmm_equal))[2*n_y-1])
-    final_beta_z <- final_beta_est/final_beta_se
-    final_beta_p <- 2 * (1 - pnorm(abs(final_beta_z)))   # two‑sided
-
-    }else{
-      theta_s <- c(rep(1,n_y-1),sem_lambda_est[2:n_y],mean(dat[,1][Z==1]),mean(dat[,1][Z==0]))
-      res_equal <- momentModel(g_equal,dat,theta0=theta_s,vcov="iid")
-      rec_gmm_equal <- gmmFit(res_equal)
-      final_lambda_est <- c(1,coef(rec_gmm_equal)[n_y:(2*n_y-2)])
-      final_lambda_se <- c(0,sqrt(diag(vcov(rec_gmm_equal))[n_y:(2*n_y-2)]))
-      final_lambda_z <- c(NA,final_lambda_est[-1]/final_lambda_se[-1])
-      final_lambda_p <- 2 * (1 - pnorm(abs(final_lambda_z)))   # two‑sided
-      final_beta_est <- coef(rec_gmm_equal)[2*n_y-1]-coef(rec_gmm_equal)[2*n_y]
-      final_beta_se <- sqrt(diag(vcov(rec_gmm_equal))[2*n_y-1] + diag(vcov(rec_gmm_equal))[2*n_y] - 2*vcov(rec_gmm_equal)[2*n_y-1,2*n_y])
-      final_beta_z <- final_beta_est/final_beta_se
-      final_beta_p <- 2 * (1 - pnorm(abs(final_beta_z)))   # two‑sided
+    if(n_x >0){
+      final_x_est <- sem_x_est
+      final_x_se <- sem_x_se
+      final_x_z <- sem_x_z
+      final_x_p <- sem_x_p
     }
   }
 
-
-  ### optimal
-
-  if(method=="gmm_opt"){
-    IV_Y <- IV_Y
-    tau <- tau
-    dat <- cbind(Y,Z)
-    g_opt <- function(theta, dat) {
-      gmm_opt(theta, dat, IV_Y = IV_Y, tau = tau)
+  ### gmm (formerly gmm_opt)
+  if(method=="gmm"){
+    dat_gmm <- cbind(Y, cov_mm, iv_load_mm, iv_reg_mm)
+    w_idx <- (n_y+1):(n_y+n_w)
+    iv_load_idx <- (n_y+n_w+1):(n_y+n_w+n_iv_load)
+    iv_reg_idx <- (n_y+n_w+n_iv_load+1):(n_y+n_w+n_iv_load+n_iv_reg)
+    iv_names_norm <- make.names(iv_names_load)
+    y_names_norm <- make.names(y_names)
+    n_load_mom <- 0
+    for(j in 2:n_y){
+      own_j <- which(iv_names_norm == y_names_norm[j])
+      n_load_mom <- n_load_mom + (n_iv_load - length(own_j))
+    }
+    # moments: loading + var(eta) + var(epsilon_j, j=1..n_y) + E[v]=0 + E[v*IV]=0
+    n_mom <- n_load_mom + 1 + n_y + 1 + n_iv_reg
+    # params: sigma_eta + lambda_2..lambda_ny + psi_1..psi_ny + alpha + beta vector
+    n_par <- 2*n_y + 1 + n_w
+    if(n_mom < n_par){
+      stop("gmm_opt under-identified: add more IVs via IV=...")
+    }
+    g_opt <- function(theta, dat_gmm) {
+      gmm_opt(theta, dat_gmm, mod = mod, n_y = n_y, w_idx = w_idx,
+              iv_load_idx = iv_load_idx, iv_reg_idx = iv_reg_idx,
+              iv_names_load = iv_names_load, y_names = y_names)
     }
     # starting value
-    if(tau==T){
-    theta_s <- c(sem_eta_var,sem_lambda_est[2:n_y],sem_var_y,sem_beta_est)
-    res_opt <-momentModel(g_opt,dat,theta0=theta_s,vcov="iid")
-    rec_gmm_opt <- gmmFit(res_opt)
-    final_lambda_est <- c(1,coef(rec_gmm_opt)[2:n_y])
-    final_lambda_se <- c(0,sqrt(diag(vcov(rec_gmm_opt))[2:n_y]))
-    final_lambda_z <- c(NA,final_lambda_est[-1]/final_lambda_se[-1])
-    final_lambda_p <- 2 * (1 - pnorm(abs(final_lambda_z)))   # two‑sided
-    final_beta_est <- coef(rec_gmm_opt)[2*n_y+1]
-    final_beta_se <- sqrt(diag(vcov(rec_gmm_opt))[2*n_y+1])
-    final_beta_z <- final_beta_est/final_beta_se
-    final_beta_p <- 2 * (1 - pnorm(abs(final_beta_z)))   # two‑sided
-
-    }else{
-      theta_s <- c(sem_eta_var,sem_lambda_est[2:n_y],sem_var_y,mean(dat[,1][Z==1]),mean(dat[,1][Z==0]))
-      res_opt <-momentModel(g_opt,dat,theta0=theta_s,vcov="iid")
-      rec_gmm_opt <- gmmFit(res_opt)
+    {
+      sem_alpha <- pe$est[pe$lhs=="eta" & pe$op=="~1"][1]
+      if(length(sem_alpha)==0 || is.na(sem_alpha)){sem_alpha <- 0}
+      theta_s <- c(sem_eta_var, sem_lambda_est[2:n_y], sem_var_y, sem_alpha, as.numeric(rg_est[w_names]))
+      res_opt <-momentModel(g_opt,dat_gmm,theta0=theta_s,vcov="iid")
+      fit_type <- if(opt) "twostep" else "onestep"
+      rec_gmm_opt <- gmmFit(res_opt, type = fit_type)
       final_lambda_est <- c(1,coef(rec_gmm_opt)[2:n_y])
       final_lambda_se <- c(0,sqrt(diag(vcov(rec_gmm_opt))[2:n_y]))
       final_lambda_z <- c(NA,final_lambda_est[-1]/final_lambda_se[-1])
       final_lambda_p <- 2 * (1 - pnorm(abs(final_lambda_z)))   # two‑sided
-      final_beta_est <- coef(rec_gmm_opt)[2*n_y+1]-coef(rec_gmm_opt)[2*n_y+2]
-      final_beta_se <- sqrt(diag(vcov(rec_gmm_opt))[2*n_y+1] + diag(vcov(rec_gmm_opt))[2*n_y+2] - 2*vcov(rec_gmm_opt)[2*n_y+1,2*n_y+2])
+      b_idx <- (2*n_y+2):(2*n_y+1+n_w)
+      beta_pos <- b_idx[which(w_names==z_name)]
+      final_beta_est <- coef(rec_gmm_opt)[beta_pos]
+      final_beta_se <- sqrt(diag(vcov(rec_gmm_opt))[beta_pos])
       final_beta_z <- final_beta_est/final_beta_se
       final_beta_p <- 2 * (1 - pnorm(abs(final_beta_z)))   # two‑sided
+      if(n_x>0){
+        x_pos <- b_idx[match(x_names,w_names)]
+        final_x_est <- coef(rec_gmm_opt)[x_pos]
+        final_x_se <- sqrt(diag(vcov(rec_gmm_opt))[x_pos])
+        final_x_z <- final_x_est/final_x_se
+        final_x_p <- 2 * (1 - pnorm(abs(final_x_z)))
+      }
     }
 
   }
@@ -175,14 +271,24 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   for (j in 1:n_y) {
     lamdba_name[j] <- paste0("lambda_",j)
   }
+  trt_name <- colnames(Z)[1]
 
-  coef_name <- c(lamdba_name,"beta")
-  coef_est <- c(final_lambda_est,final_beta_est)
-  coef_se <- c(final_lambda_se,final_beta_se)
-  coef_z <- c(final_lambda_z,final_beta_z)
-  coef_p <- c(final_lambda_p,final_beta_p)
+  if(n_x>0){
+    coef_name <- c(lamdba_name,trt_name,x_names)
+    coef_est <- c(final_lambda_est,final_beta_est,final_x_est)
+    coef_se <- c(final_lambda_se,final_beta_se,final_x_se)
+    coef_z <- c(final_lambda_z,final_beta_z,final_x_z)
+    coef_p <- c(final_lambda_p,final_beta_p,final_x_p)
+  }else{
+    coef_name <- c(lamdba_name,trt_name)
+    coef_est <- c(final_lambda_est,final_beta_est)
+    coef_se <- c(final_lambda_se,final_beta_se)
+    coef_z <- c(final_lambda_z,final_beta_z)
+    coef_p <- c(final_lambda_p,final_beta_p)
+  }
 
-  output <- matrix(NA, nrow = n_y+1, ncol = 4)
+  out_n <- n_y+1+n_x
+  output <- matrix(NA, nrow = out_n, ncol = 4)
   output[,1] <- coef_est
   output[,2] <- coef_se
   output[,3] <- coef_z
@@ -191,13 +297,14 @@ estlatent <- function(Z,Y,X=NULL,eta = 1,method="sem",IV_Y=T,tau=T){
   rownames(output) <- coef_name
   colnames(output) <- c("Estimate", "SE","Z","P-value")
 
-  printCoefmat(output, P.values = TRUE, has.Pvalue = TRUE)
-
-  # for extract
-  output2 <- list()
-  output2$estimate <- coef_est
-  output2$se <- coef_se
-  output2$p <- coef_p
-  invisible(output2)
+  fit <- list(
+    call = match.call(),
+    method = method,
+    mod = mod,
+    IV = if(exists("iv_names_load")) iv_names_load else NULL,
+    coefficients = output
+  )
+  class(fit) <- "estlatent"
+  fit
 
 }

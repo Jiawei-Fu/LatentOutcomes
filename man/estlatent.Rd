@@ -4,22 +4,43 @@
 \alias{estlatent}
 \title{Estimate the Causal Effects with Latent Outcomes}
 \usage{
-estlatent(Z, Y, X = NULL, eta = 1, method = "sem", IV_Y = T, tau = T)
+estlatent(
+  mod = NULL,
+  Z,
+  Y,
+  data = NULL,
+  method = "sem",
+  IV_Y = NULL,
+  opt = TRUE
+)
 }
 \arguments{
-\item{Z}{a vector of Treatment variable.}
+\item{mod}{Optional regression specification for the latent regression.
+Recommended form is RHS-only, e.g. \code{"~Z+x1+x2"}. Also accepts \code{"Y~..."} or \code{"eta~..."}.
+If \code{NULL}, the default model is "~Z", which only contains the treatment variable.}
 
-\item{Y}{a data frame that includes the measured outcomes. The outcome in the first column will be set as lambda=1.}
+\item{Z}{Treatment input. Can be:
+a numeric/logical vector,
+a one-column data frame/matrix,
+or a single character column name when \code{data} is provided.}
 
-\item{X}{an optional data frame that includes other covariates. The defauly is NULL.}
+\item{Y}{Measured outcomes. Can be:
+a data frame/matrix with 2+ outcome columns,
+or a character vector of outcome column names when \code{data} is provided.
+The first outcome is the reference loading (\code{lambda_1 = 1}).}
 
-\item{eta}{tbd}
+\item{data}{Optional data frame used to resolve character inputs in \code{Z} and \code{Y},
+and to supply covariates referenced in \code{mod}.}
 
-\item{method}{estimation methods options. One can choose from "sem", "gmm-equal", and "gmm_opt". The default option is "sem".}
+\item{method}{Estimation method: \code{"sem"} or \code{"gmm"} (default \code{"sem"}).}
 
-\item{IV_Y}{Whether use other outcome measures as IVs}
+\item{IV_Y}{Optional character vector of IV names for loading moments in GMM.
+Names must come from covariates implied by \code{mod} and/or outcome names.
+Default is treatment \code{Z}. Regression moments always use covariates from \code{mod} as their own IVs.
+For \code{method = "sem"}, \code{IV_Y} is not used; SEM uses all variables as IVs.}
 
-\item{tau}{For gmm_ methods only. Default is TRUE: gmm will use only one moment conditions to estimate LTE. If it is FALSE, gmm methods use two moment conditions (two averages in treatment and control groups) to estimate LTE.}
+\item{opt}{Logical. For \code{method="gmm"}, \code{TRUE} (default) uses efficient two-step GMM;
+\code{FALSE} uses one-step GMM with identity weighting.}
 }
 \description{
 Estimate the Causal Effects with Latent Outcomes
@@ -27,9 +48,12 @@ Estimate the Causal Effects with Latent Outcomes
 \examples{
 \dontrun{
 data(test_dat)  # input data
-estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="sem",IV_Y=T,tau=T)
-estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_equal",IV_Y=T,tau=T)
-estlatent(test_dat$Z,test_dat[,1:3],X=NULL,eta = 1,method="gmm_opt",IV_Y=T,tau=T)
+m1 <- estlatent(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="sem")
+summary(m1) # sem model
+m2 <- estlatent(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y2"), opt=TRUE)
+summary(m2) # gmm model, using Z and Y2 as IVs for the factor loadings
+m3 <- estlatent(mod="~Z+x1+x2", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y1","Y2","Y3"), opt=TRUE) # control covariates x1 and x2, using Z, Y1, Y2, and Y3 as IVs for the factor loadings
+summary(m3)
 }
 }
 \references{

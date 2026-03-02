@@ -1,36 +1,35 @@
 #' @title GMM opt
 #'export
-gmm_opt <- function(theta,dat,IV_Y,tau){
+gmm_opt <- function(theta,dat,mod=NULL,n_y,w_idx,iv_load_idx,iv_reg_idx,iv_names_load,y_names){
+  if(!is.null(mod) && (!is.character(mod) || length(mod)!=1)){
+    stop("mod must be NULL or a single model string")
+  }
 
   ### theta 1, eta
   ### theta 2, n_y lambda
   ### theta n_y+1,..., 2(n_y)-1 var of epsilon
 
-  ncol <- ncol(dat)
-  Z <- dat[,ncol]
-  n_y <- ncol-1 # how many outcome
-  p <- mean(Z)
-  Y <- dat[,1:(ncol-1)]
+  Y <- as.matrix(dat[,1:n_y,drop=FALSE])
+  W <- as.matrix(dat[,w_idx,drop=FALSE])
+  IV_load <- as.matrix(dat[,iv_load_idx,drop=FALSE])
+  IV_reg <- as.matrix(dat[,iv_reg_idx,drop=FALSE])
+  n_iv_load <- ncol(IV_load)
+  n_iv_reg <- ncol(IV_reg)
+  n_w <- ncol(W)
+  iv_names_norm <- make.names(iv_names_load)
+  y_names_norm <- make.names(y_names)
 
   ## demean Y
   for (i in 1:n_y) {
     Y[,i] <- dat[,i]-mean(dat[,i])
   }
 
-
-  tot_mom <- NA
-
-  if(IV_Y==T){
-    tot_mom <-  (n_y-1)*(n_y-1)+1+n_y  # include var of eta, therefore +1; and var of epsilon
-  }else{
-    tot_mom <- n_y+n_y
+  n_load_mom <- 0
+  for(j in 2:n_y){
+    own_j <- which(iv_names_norm == y_names_norm[j])
+    n_load_mom <- n_load_mom + (n_iv_load - length(own_j))
   }
-
-  if(tau==T){
-    tot_mom <- tot_mom+1
-  }else{
-    tot_mom <- tot_mom+2
-  }
+  tot_mom <- n_load_mom + 1 + n_y + 1 + n_iv_reg
 
   mom <- vector("list", tot_mom )
 
@@ -40,17 +39,12 @@ gmm_opt <- function(theta,dat,IV_Y,tau){
 
     ### Moment conditions for lambda (IV estimation)
     rj <- Y[,j]-theta[j]*Y[,1]
-    mom[[indx]] <- rj*Z # IV equ 1: use Z as IV
-    indx <- indx + 1
-
-    if(IV_Y==T){ # use other Y as IV
-      otherYs <- setdiff(2:n_y, j)
-      for (k in otherYs) {
-        mom[[indx]] <- rj * Y[, k]  # IV equ 2: use other Ys as IV
-        indx <- indx + 1
-      }
+    own_j <- which(iv_names_norm == y_names_norm[j])
+    use_k <- setdiff(seq_len(n_iv_load), own_j)
+    for(k in use_k){
+      mom[[indx]] <- rj * IV_load[,k]
+      indx <- indx + 1
     }
-
   }
 
   ### theta 1 for variance of eta
@@ -80,12 +74,15 @@ gmm_opt <- function(theta,dat,IV_Y,tau){
   # w_s <- sum(w)
   #Y[,1]*(w[1]/w_s) + (Y[,2]/2)*(w[2]/w_s) + (Y[,3]/3)*(w[3]/w_s)
 
-  if(tau==F){
-    mom[[indx]] <- (avgY - theta[2*n_y+1]) * Z
+  alpha <- theta[2*n_y+1]
+  b_start <- 2*n_y+2
+  b <- theta[b_start:(b_start+n_w-1)]
+  v <- avgY - alpha - as.vector(W %*% b)
+  mom[[indx]] <- v
+  indx <- indx + 1
+  for(k in 1:n_iv_reg){
+    mom[[indx]] <- v * IV_reg[,k]
     indx <- indx + 1
-    mom[[indx]] <- (avgY - theta[2*n_y+2]) * (1-Z)
-  }else{
-    mom[[indx]]<- (Z/p-(1-Z)/(1-p))*avgY-theta[2*n_y+1]
   }
 
   do.call(cbind, mom)

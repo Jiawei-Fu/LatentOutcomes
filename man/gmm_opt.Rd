@@ -5,7 +5,17 @@
 \title{GMM opt
 export}
 \usage{
-gmm_opt(theta, dat, IV_Y, tau)
+gmm_opt(
+  theta,
+  dat,
+  mod = NULL,
+  n_y,
+  w_idx,
+  iv_load_idx,
+  iv_reg_idx,
+  iv_names_load,
+  y_names
+)
 }
 \description{
 GMM opt
