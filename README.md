@@ -88,7 +88,7 @@ fit_gmm_ave <- estlatent_ave(
   Y = c("Y1", "Y2", "Y3"),
   data = test_dat,
   method = "gmm",
-  IV_Y = c("Z"),
+  IV_Y = c("Z", "Y1", "Y2", "Y3"),
   opt = TRUE
 )
 summary(fit_gmm_ave)
@@ -100,7 +100,7 @@ fit_gmm_robust <- estlatent_robust(
   Y = c("Y1", "Y2", "Y3"),
   data = test_dat,
   method = "gmm",
-  IV_Y = c("Z"),
+  IV_Y = c("Z", "Y1", "Y2", "Y3"),
   opt = TRUE
 )
 summary(fit_gmm_robust)
@@ -114,9 +114,9 @@ Notes:
 - `IV_Y` is for loading moments in `method = "gmm"` only.
 - For `method = "sem"`, `IV_Y` is not used; SEM is estimated from the full model specification directly.
 - Regression moments in GMM automatically use covariates from `mod` as IVs.
-- `IV_Y` may include variables from `data` even if they are not in `mod`.
 - Use `summary(fit)` to print coefficient tables.
 
+- In previous examples, we use treatment assignment and all measurements as IVs. In practice, it is more robust to use treatment assignment as the single IV.
 
 Model Misspecification:
 
