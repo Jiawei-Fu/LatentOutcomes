@@ -2,22 +2,20 @@
 % Please edit documentation in R/gmm_opt.R
 \name{gmm_opt}
 \alias{gmm_opt}
-\title{GMM opt
-export}
+\title{GMM moments (per-outcome proxy, no inverse-variance aggregation)}
 \usage{
 gmm_opt(
   theta,
   dat,
-  mod = NULL,
   n_y,
   w_idx,
   iv_load_idx,
   iv_reg_idx,
   iv_names_load,
+  iv_names_reg,
   y_names
 )
 }
 \description{
-GMM opt
-export
+GMM moments (per-outcome proxy, no inverse-variance aggregation)
 }

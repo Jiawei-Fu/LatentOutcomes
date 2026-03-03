@@ -1,4 +1,4 @@
-#' Estimate latent-outcome effects (per-outcome GMM without inverse-variance aggregation)
+#' Estimate latent-outcome effects (two-step robust GMM with Godambe sandwich)
 #'
 #' @param mod Optional regression specification for latent regression.
 #'   Recommended form: "~Z+x1+x2". Also accepts "Y~..." or "eta~...".
@@ -7,8 +7,8 @@
 #' @param Y Measured outcomes: matrix-data.frame with >=2 columns, or character vector of names when data is provided.
 #' @param data Optional data frame to resolve character inputs and covariates in mod.
 #' @param method "sem" or "gmm".
-#' @param IV_Y Optional loading-IV names for GMM. Default uses treatment Z only.
-#' @param opt For GMM: TRUE=two-step efficient GMM, FALSE=one-step GMM.
+#' @param IV_Y Optional loading-IV names for stage-1 loading GMM. Default uses treatment Z only.
+#' @param opt For each GMM stage: TRUE=two-step efficient GMM, FALSE=one-step GMM.
 #'@examples
 #' \dontrun{
 #' data("test_data", package = "LatentOutcomes")  # input data
@@ -25,7 +25,70 @@
 #'@importFrom stats pnorm printCoefmat
 #'@export
 
-estlatent <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL, opt = TRUE) {
+estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL, opt = TRUE) {
+  .pinv <- function(M, tol = 1e-8) {
+    s <- svd(M)
+    if (length(s$d) == 0) {
+      return(matrix(0, ncol = nrow(M), nrow = ncol(M)))
+    }
+    dmax <- max(s$d)
+    keep <- s$d > tol * dmax
+    if (!any(keep)) {
+      return(matrix(0, ncol = nrow(M), nrow = ncol(M)))
+    }
+    s$v[, keep, drop = FALSE] %*% (t(s$u[, keep, drop = FALSE]) / s$d[keep])
+  }
+
+  .jacobian_fd <- function(fun, par, rel_step = 1e-6) {
+    par <- as.numeric(par)
+    f0 <- as.numeric(fun(par))
+    m <- length(f0)
+    p <- length(par)
+    J <- matrix(0, nrow = m, ncol = p)
+    for (k in seq_len(p)) {
+      h <- rel_step * (abs(par[k]) + 1)
+      p_plus <- par
+      p_minus <- par
+      p_plus[k] <- p_plus[k] + h
+      p_minus[k] <- p_minus[k] - h
+      f_plus <- as.numeric(fun(p_plus))
+      f_minus <- as.numeric(fun(p_minus))
+      J[, k] <- (f_plus - f_minus) / (2 * h)
+    }
+    J
+  }
+
+  .fit_stage_gmm <- function(moment_fun, theta0, opt) {
+    gbar_fun <- function(theta) colMeans(moment_fun(theta))
+    Q_fun <- function(theta, W) {
+      g <- gbar_fun(theta)
+      as.numeric(crossprod(g, W %*% g))
+    }
+
+    q <- length(gbar_fun(theta0))
+    W1 <- diag(q)
+    fit1 <- optim(theta0, fn = function(th) Q_fun(th, W1), method = "BFGS",
+                  control = list(maxit = 5000, reltol = 1e-12))
+    theta_pre <- as.numeric(fit1$par)
+
+    if (!opt) {
+      theta_hat <- theta_pre
+      W_hat <- W1
+    } else {
+      m_pre <- moment_fun(theta_pre)
+      S_pre <- crossprod(m_pre) / nrow(m_pre)
+      W2 <- .pinv(S_pre)
+      fit2 <- optim(theta_pre, fn = function(th) Q_fun(th, W2), method = "BFGS",
+                    control = list(maxit = 5000, reltol = 1e-12))
+      theta_hat <- as.numeric(fit2$par)
+      W_hat <- W2
+    }
+
+    list(
+      par = theta_hat,
+      W = W_hat
+    )
+  }
 
   if (!is.null(data)) {
     if (!is.data.frame(data)) stop("data must be a data.frame")
@@ -103,7 +166,6 @@ estlatent <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL
   n_x <- length(x_names)
   w_names <- colnames(cov_mm)
 
-  # loading-IV candidate pool: allow any variable from data, plus outcomes/treatment/mod covariates.
   iv_pool <- data.frame(check.names = FALSE)
   if (!is.null(data)) {
     iv_pool <- data
@@ -136,7 +198,6 @@ estlatent <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL
   n_iv_reg <- ncol(iv_reg_mm)
   n_w <- ncol(cov_mm)
 
-  # SEM benchmark (for method='sem' output and GMM starting values)
   reg_text <- paste0("eta ~ ", paste(colnames(cov_mm), collapse = "+"))
   dat_sem <- cbind(cov_mm, Y)
   ld_text <- paste0("eta =~ 1*", paste0(colnames(Y), collapse = "+"))
@@ -201,9 +262,7 @@ estlatent <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL
     iv_reg_idx <- (n_y + n_w + n_iv_load + 1):(n_y + n_w + n_iv_load + n_iv_reg)
 
     iv_names_norm <- make.names(iv_names_load)
-    iv_reg_names_norm <- make.names(iv_names_reg)
     y_names_norm <- make.names(y_names)
-    overlap_norm <- intersect(iv_names_norm, iv_reg_names_norm)
 
     n_load_mom <- 0
     for (j in 2:n_y) {
@@ -215,62 +274,110 @@ estlatent <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL
       }
       n_load_mom <- n_load_mom + usable_j
     }
-
-    # Parameters: lambda_2..lambda_ny + alpha + beta(W)
-    n_par <- (n_y - 1) + 1 + n_w
-    # Moments: loading moments + per-outcome regression moments.
-    # For j>=2, remove v_j * W_k moments if W_k name overlaps loading IV names.
-    n_reg_mom <- 0
-    for (j in 1:n_y) {
-      if (j == 1) {
-        reg_keep <- seq_len(n_iv_reg)
-      } else {
-        reg_keep <- setdiff(seq_len(n_iv_reg), which(iv_reg_names_norm %in% overlap_norm))
-      }
-      n_reg_mom <- n_reg_mom + 1 + length(reg_keep)
+    if (n_load_mom < (n_y - 1)) {
+      stop("Stage-1 loading GMM under-identified: add more valid IVs in IV_Y")
     }
-    n_mom <- n_load_mom + n_reg_mom
-    if (n_mom < n_par) stop("gmm_opt under-identified: add more valid IVs in IV_Y")
 
-    g_opt <- function(theta, dat_gmm) {
-      gmm_opt(theta, dat_gmm,
-              n_y = n_y,
-              w_idx = w_idx,
-              iv_load_idx = iv_load_idx,
-              iv_reg_idx = iv_reg_idx,
-              iv_names_load = iv_names_load,
-              iv_names_reg = iv_names_reg,
-              y_names = y_names)
+    m1_fun <- function(theta_load) {
+      gmm_opt_robust(theta_load, dat_gmm,
+                      n_y = n_y,
+                      w_idx = w_idx,
+                      iv_load_idx = iv_load_idx,
+                      iv_reg_idx = iv_reg_idx,
+                      iv_names_load = iv_names_load,
+                      iv_names_reg = iv_names_reg,
+                      y_names = y_names,
+                      block = "load")
     }
 
     sem_alpha <- pe$est[pe$lhs == "eta" & pe$op == "~1"][1]
     if (length(sem_alpha) == 0 || is.na(sem_alpha)) sem_alpha <- 0
 
-    theta_s <- c(sem_lambda_est[2:n_y], sem_alpha, as.numeric(rg_est[w_names]))
-    mom_model <- momentModel(g_opt, dat_gmm, theta0 = theta_s, vcov = "iid")
-    fit_type <- if (opt) "twostep" else "onestep"
-    fit_gmm <- gmmFit(mom_model, type = fit_type)
+    theta1_start <- as.numeric(sem_lambda_est[2:n_y])
+    if (any(!is.finite(theta1_start))) theta1_start <- rep(1, n_y - 1)
+    fit1 <- .fit_stage_gmm(m1_fun, theta1_start, opt = opt)
+    theta1_hat <- as.numeric(fit1$par)
+    lambda_hat <- c(1, theta1_hat)
 
-    cf <- coef(fit_gmm)
-    vv <- vcov(fit_gmm)
-    se <- sqrt(diag(vv))
+    m2_fun <- function(theta_reg, lambda_val = lambda_hat) {
+      gmm_opt_robust(theta_reg, dat_gmm,
+                      n_y = n_y,
+                      w_idx = w_idx,
+                      iv_load_idx = iv_load_idx,
+                      iv_reg_idx = iv_reg_idx,
+                      iv_names_load = iv_names_load,
+                      iv_names_reg = iv_names_reg,
+                      y_names = y_names,
+                      block = "reg",
+                      lambda_fix = lambda_val)
+    }
 
-    final_lambda_est <- c(1, cf[1:(n_y - 1)])
-    final_lambda_se <- c(0, se[1:(n_y - 1)])
+    theta2_start <- c(sem_alpha, as.numeric(rg_est[w_names]))
+    theta2_start[!is.finite(theta2_start)] <- 0
+    fit2 <- .fit_stage_gmm(function(th) m2_fun(th, lambda_hat), theta2_start, opt = opt)
+    theta2_hat <- as.numeric(fit2$par)
+
+    # Stacked estimating equations with fixed stage weight matrices:
+    # s1 = G1' W1 g1bar, s2 = G2' W2 g2bar.
+    W1 <- fit1$W
+    W2 <- fit2$W
+    p1 <- length(theta1_hat)
+    p2 <- length(theta2_hat)
+    p_all <- p1 + p2
+    n <- nrow(dat_gmm)
+
+    g1_bar_fun <- function(th1) colMeans(m1_fun(th1))
+    g2_bar_fun <- function(th2, th1) colMeans(m2_fun(th2, c(1, th1)))
+
+    G1_hat <- .jacobian_fd(g1_bar_fun, theta1_hat)
+    G2_hat <- .jacobian_fd(function(th2) g2_bar_fun(th2, theta1_hat), theta2_hat)
+    M1_hat <- m1_fun(theta1_hat)
+    M2_hat <- m2_fun(theta2_hat, lambda_hat)
+
+    Psi1 <- M1_hat %*% W1 %*% G1_hat
+    Psi2 <- M2_hat %*% W2 %*% G2_hat
+    Psi <- cbind(Psi1, Psi2)
+    B_hat <- crossprod(Psi) / n
+
+    s_stack_fun <- function(theta_all) {
+      th1 <- theta_all[1:p1]
+      th2 <- theta_all[(p1 + 1):p_all]
+
+      g1_bar <- g1_bar_fun(th1)
+      G1 <- .jacobian_fd(g1_bar_fun, th1)
+      s1 <- as.numeric(t(G1) %*% W1 %*% g1_bar)
+
+      g2_bar_local_fun <- function(t2) g2_bar_fun(t2, th1)
+      g2_bar <- g2_bar_local_fun(th2)
+      G2 <- .jacobian_fd(g2_bar_local_fun, th2)
+      s2 <- as.numeric(t(G2) %*% W2 %*% g2_bar)
+
+      c(s1, s2)
+    }
+
+    theta_all_hat <- c(theta1_hat, theta2_hat)
+    A_hat <- .jacobian_fd(s_stack_fun, theta_all_hat)
+    A_inv <- .pinv(A_hat)
+    V_all <- A_inv %*% B_hat %*% t(A_inv) / n
+    se_all <- sqrt(pmax(diag(V_all), 0))
+
+    final_lambda_est <- c(1, theta1_hat)
+    final_lambda_se <- c(0, se_all[1:p1])
     final_lambda_z <- c(NA, final_lambda_est[-1] / final_lambda_se[-1])
-    final_lambda_p <- 2 * (1 - pnorm(abs(final_lambda_z)))
+    final_lambda_p <- c(NA, 2 * (1 - pnorm(abs(final_lambda_z[-1]))))
 
-    b_idx <- (n_y + 1):(n_y + n_w)
-    beta_pos <- b_idx[which(w_names == z_name)]
-    final_beta_est <- cf[beta_pos]
-    final_beta_se <- se[beta_pos]
+    b_hat <- theta2_hat[2:(1 + n_w)]
+    b_se <- se_all[(p1 + 2):p_all]
+    b_idx <- which(w_names == z_name)
+    final_beta_est <- b_hat[b_idx]
+    final_beta_se <- b_se[b_idx]
     final_beta_z <- final_beta_est / final_beta_se
     final_beta_p <- 2 * (1 - pnorm(abs(final_beta_z)))
 
     if (n_x > 0) {
-      x_pos <- b_idx[match(x_names, w_names)]
-      final_x_est <- cf[x_pos]
-      final_x_se <- se[x_pos]
+      x_idx <- match(x_names, w_names)
+      final_x_est <- b_hat[x_idx]
+      final_x_se <- b_se[x_idx]
       final_x_z <- final_x_est / final_x_se
       final_x_p <- 2 * (1 - pnorm(abs(final_x_z)))
     }
@@ -298,7 +405,7 @@ estlatent <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL
 
   fit <- list(
     call = match.call(),
-    method = method,
+    method = if (method == "gmm") "gmm_robust" else method,
     mod = mod,
     IV = if (exists("iv_names_load")) iv_names_load else NULL,
     coefficients = output
