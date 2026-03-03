@@ -29,7 +29,8 @@ gmm_opt <- function(theta,dat,mod=NULL,n_y,w_idx,iv_load_idx,iv_reg_idx,iv_names
     bad_j <- which(iv_names_norm %in% c(y_names_norm[1], y_names_norm[j]))
     n_load_mom <- n_load_mom + (n_iv_load - length(bad_j))
   }
-  tot_mom <- n_load_mom + 1 + n_y + 1 + n_iv_reg
+  # loading-IV moments + cov(Y1,Yj) for j=2..n_y + variance moments + E[v] + E[v*IV_reg]
+  tot_mom <- n_load_mom + (n_y - 1) + n_y + 1 + n_iv_reg
 
   mom <- vector("list", tot_mom )
 
@@ -47,10 +48,11 @@ gmm_opt <- function(theta,dat,mod=NULL,n_y,w_idx,iv_load_idx,iv_reg_idx,iv_names
     }
   }
 
-  ### theta 1 for variance of eta
-
-  mom[[indx]] <- Y[,1]*Y[,2] - theta[2]*theta[1]
-  indx <- indx +1
+  ### covariance moments: Cov(Y1, Yj) = lambda_j * Var(eta), for j = 2..n_y
+  for (j in 2:n_y) {
+    mom[[indx]] <- Y[,1]*Y[,j] - theta[j]*theta[1]
+    indx <- indx +1
+  }
 
   ### theta theta n_y+1,..., 2(n_y)-1 var of epsilon
 

@@ -17,11 +17,12 @@
 #' @param IV_Y Optional character vector of IV names for loading moments in GMM.
 #'   Names must come from covariates implied by `mod` and/or outcome names.
 #'   Default is treatment `Z`. Regression moments always use covariates from `mod` as their own IVs.
+#'   For `method = "sem"`, `IV_Y` is not used; SEM uses all variables as IVs.
 #' @param opt Logical. For `method="gmm"`, `TRUE` (default) uses efficient two-step GMM;
 #'   `FALSE` uses one-step GMM with identity weighting.
 #'@examples
 #' \dontrun{
-#' data("test_data", package = "LatentOutcomes")  # input data
+#' data(test_dat)  # input data
 #' m1 <- estlatent(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="sem")
 #' summary(m1) # sem model
 #' m2 <- estlatent(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y2"), opt=TRUE)
@@ -218,8 +219,8 @@ estlatent <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE){
       bad_j <- which(iv_names_norm %in% c(y_names_norm[1], y_names_norm[j]))
       n_load_mom <- n_load_mom + (n_iv_load - length(bad_j))
     }
-    # moments: loading + var(eta) + var(epsilon_j, j=1..n_y) + E[v]=0 + E[v*IV]=0
-    n_mom <- n_load_mom + 1 + n_y + 1 + n_iv_reg
+    # moments: loading + cov(Y1,Yj; j=2..n_y) + var(epsilon/eta block) + E[v]=0 + E[v*IV_reg)=0
+    n_mom <- n_load_mom + (n_y - 1) + n_y + 1 + n_iv_reg
     # params: sigma_eta + lambda_2..lambda_ny + psi_1..psi_ny + alpha + beta vector
     n_par <- 2*n_y + 1 + n_w
     if(n_mom < n_par){
