@@ -72,9 +72,8 @@ summary(fit_gmm_cov)
 Notes:
 
 - `mod` controls the latent regression specification `eta ~ ...`.
-- Recommended `mod` format is RHS-only, e.g. `~Z+x1+x2` or `~Z+x1+x2:x3`.
+- Recommended `mod` format is RHS-only, e.g. `~Z+x1+x2`.
 - `mod = NULL` means treatment-only model (`~Z`).
-- `:` denotes interaction terms (for example, `x2:x3`).
 - `IV_Y` is for loading moments in `method = "gmm"` only.
 - For `method = "sem"`, `IV_Y` is not used; SEM is estimated from the full model specification directly.
 - Regression moments in GMM automatically use covariates from `mod` as IVs.
