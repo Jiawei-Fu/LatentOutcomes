@@ -1,5 +1,5 @@
 #' @title GMM moments with averaged outcome proxy
-#'export
+#' @export
 gmm_ave <- function(theta,dat,mod=NULL,n_y,w_idx,iv_load_idx,iv_reg_idx,iv_names_load,iv_names_reg,y_names){
   if(!is.null(mod) && (!is.character(mod) || length(mod)!=1)){
     stop("mod must be NULL or a single model string")

@@ -4,23 +4,11 @@
 \alias{estlatent}
 \title{Estimate latent-outcome effects (per-outcome GMM without inverse-variance aggregation)}
 \usage{
-estlatent(
-  mod = NULL,
-  Z,
-  Y,
-  data = NULL,
-  method = "sem",
-  IV_Y = NULL,
-  opt = TRUE
-)
+estlatent(mod, Y, data = NULL, method = "sem", IV_Y = NULL, opt = TRUE)
 }
 \arguments{
-\item{mod}{Optional regression specification for latent regression.
-Recommended form: "~Z+x1+x2". Also accepts "Y~..." or "eta~...".
-If NULL, defaults to using all columns in \code{Z} on the RHS.}
-
-\item{Z}{Treatment input: vector, matrix-data.frame with one or more columns,
-or character column name(s) when data is provided.}
+\item{mod}{Required regression specification for latent regression.
+Recommended form: "~trt+x1+x2". Also accepts "Y~..." or "eta~...".}
 
 \item{Y}{Measured outcomes: matrix-data.frame with >=2 columns, or character vector of names when data is provided.}
 
@@ -28,7 +16,7 @@ or character column name(s) when data is provided.}
 
 \item{method}{"sem" or "gmm".}
 
-\item{IV_Y}{Optional loading-IV names for GMM. Default uses all treatment columns in \code{Z}.}
+\item{IV_Y}{Optional loading-IV names for GMM. Default uses all regressors from \code{mod}.}
 
 \item{opt}{For GMM: TRUE=two-step efficient GMM, FALSE=one-step GMM.}
 }

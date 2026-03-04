@@ -2,8 +2,7 @@
 % Please edit documentation in R/gmm_ave.R
 \name{gmm_ave}
 \alias{gmm_ave}
-\title{GMM moments with averaged outcome proxy
-export}
+\title{GMM moments with averaged outcome proxy}
 \usage{
 gmm_ave(
   theta,
@@ -20,5 +19,4 @@ gmm_ave(
 }
 \description{
 GMM moments with averaged outcome proxy
-export
 }

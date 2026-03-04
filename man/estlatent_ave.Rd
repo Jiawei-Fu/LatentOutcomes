@@ -2,57 +2,42 @@
 % Please edit documentation in R/estlatent_ave.R
 \name{estlatent_ave}
 \alias{estlatent_ave}
-\title{Estimate the Causal Effects with Latent Outcomes}
+\title{Estimate the Causal Effects with Latent Outcomes (average-proxy GMM)}
 \usage{
-estlatent_ave(
-  mod = NULL,
-  Z,
-  Y,
-  data = NULL,
-  method = "sem",
-  IV_Y = NULL,
-  opt = TRUE
-)
+estlatent_ave(mod, Y, data = NULL, method = "sem", IV_Y = NULL, opt = TRUE)
 }
 \arguments{
-\item{mod}{Optional regression specification for the latent regression.
-Recommended form is RHS-only, e.g. \code{"~Z+x1+x2"}. Also accepts \code{"Y~..."} or \code{"eta~..."}.
-If \code{NULL}, the default model uses all columns of \code{Z} on the RHS.}
-
-\item{Z}{Treatment input. Can be:
-a numeric/logical vector,
-a data frame/matrix with one or more columns,
-or character column name(s) when \code{data} is provided.}
+\item{mod}{Required regression specification for latent regression.
+Recommended form is RHS-only, e.g. \code{"~trt+x1+x2"}. Also accepts \code{"Y~..."} or \code{"eta~..."}.}
 
 \item{Y}{Measured outcomes. Can be:
 a data frame/matrix with 2+ outcome columns,
 or a character vector of outcome column names when \code{data} is provided.
 The first outcome is the reference loading (\code{lambda_1 = 1}).}
 
-\item{data}{Optional data frame used to resolve character inputs in \code{Z} and \code{Y},
+\item{data}{Optional data frame used to resolve character inputs in \code{Y},
 and to supply covariates referenced in \code{mod}.}
 
 \item{method}{Estimation method: \code{"sem"} or \code{"gmm"} (default \code{"sem"}).}
 
 \item{IV_Y}{Optional character vector of IV names for loading moments in GMM.
-Names can come from \code{data} (when provided), outcomes, treatment, and/or covariates implied by \code{mod}.
-Default is all treatment columns in \code{Z}. Regression moments always use covariates from \code{mod} as their own IVs.}
+Names can come from \code{data} (when provided), outcomes, and/or covariates implied by \code{mod}.
+Default is all regressors implied by \code{mod}.}
 
 \item{opt}{Logical. For \code{method="gmm"}, \code{TRUE} (default) uses efficient two-step GMM;
 \code{FALSE} uses one-step GMM with identity weighting.}
 }
 \description{
-Estimate the Causal Effects with Latent Outcomes
+Estimate the Causal Effects with Latent Outcomes (average-proxy GMM)
 }
 \examples{
 \dontrun{
-data("test_data", package = "LatentOutcomes")  # input data
-m1 <- estlatent_ave(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="sem")
-summary(m1) # sem model
-m2 <- estlatent_ave(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y2"), opt=TRUE)
-summary(m2) # gmm model, using Z and Y2 as IVs for the factor loadings
-m3 <- estlatent_ave(mod="~Z+x1+x2", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y1","Y2","Y3"), opt=TRUE) # control covariates x1 and x2, using Z, Y1, Y2, and Y3 as IVs for the factor loadings
-summary(m3)
+data("test_data", package = "LatentOutcomes")
+m1 <- estlatent_ave(mod = "~trt", Y = c("Y1","Y2","Y3"), data = test_dat, method = "sem")
+summary(m1)
+m2 <- estlatent_ave(mod = "~trt+x1+x2", Y = c("Y1","Y2","Y3"), data = test_dat,
+                   method = "gmm", IV_Y = c("trt","Y2"), opt = TRUE)
+summary(m2)
 }
 }
 \references{

@@ -3,6 +3,7 @@
 export(estlatent)
 export(estlatent_ave)
 export(estlatent_robust)
+export(gmm_ave)
 export(gmm_opt)
 export(gmm_opt_robust)
 export(print.estlatent)
