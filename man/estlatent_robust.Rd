@@ -17,9 +17,10 @@ estlatent_robust(
 \arguments{
 \item{mod}{Optional regression specification for latent regression.
 Recommended form: "~Z+x1+x2". Also accepts "Y~..." or "eta~...".
-If NULL, defaults to "~Z".}
+If NULL, defaults to using all columns in \code{Z} on the RHS.}
 
-\item{Z}{Treatment input: vector/1-col matrix-data.frame, or a single column name when data is provided.}
+\item{Z}{Treatment input: vector, matrix-data.frame with one or more columns,
+or character column name(s) when data is provided.}
 
 \item{Y}{Measured outcomes: matrix-data.frame with >=2 columns, or character vector of names when data is provided.}
 
@@ -27,24 +28,10 @@ If NULL, defaults to "~Z".}
 
 \item{method}{"sem" or "gmm".}
 
-\item{IV_Y}{Optional loading-IV names for stage-1 loading GMM. Default uses treatment Z only.}
+\item{IV_Y}{Optional loading-IV names for stage-1 loading GMM. Default uses all treatment columns in \code{Z}.}
 
 \item{opt}{For each GMM stage: TRUE=two-step efficient GMM, FALSE=one-step GMM.}
 }
 \description{
 Estimate latent-outcome effects (two-step robust GMM with Godambe sandwich)
-}
-\examples{
-\dontrun{
-data("test_data", package = "LatentOutcomes")  # input data
-m1 <- estlatent_ave(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="sem")
-summary(m1) # sem model
-m2 <- estlatent_ave(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y2"), opt=TRUE)
-summary(m2) # gmm model, using Z and Y2 as IVs for the factor loadings
-m3 <- estlatent_ave(mod="~Z+x1+x2", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y1","Y2","Y3"), opt=TRUE) # control covariates x1 and x2, using Z, Y1, Y2, and Y3 as IVs for the factor loadings
-summary(m3)
-}
-}
-\references{
-Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
 }

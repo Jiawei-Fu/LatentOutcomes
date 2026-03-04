@@ -2,11 +2,11 @@
 #'
 #' @param mod Optional regression specification for the latent regression.
 #'   Recommended form is RHS-only, e.g. `"~Z+x1+x2"`. Also accepts `"Y~..."` or `"eta~..."`.
-#'   If `NULL`, the default model is "~Z", which only contains the treatment variable.
+#'   If `NULL`, the default model uses all columns of `Z` on the RHS.
 #' @param Z Treatment input. Can be:
 #'   a numeric/logical vector,
-#'   a one-column data frame/matrix,
-#'   or a single character column name when `data` is provided.
+#'   a data frame/matrix with one or more columns,
+#'   or character column name(s) when `data` is provided.
 #' @param Y Measured outcomes. Can be:
 #'   a data frame/matrix with 2+ outcome columns,
 #'   or a character vector of outcome column names when `data` is provided.
@@ -16,7 +16,7 @@
 #' @param method Estimation method: `"sem"` or `"gmm"` (default `"sem"`).
 #' @param IV_Y Optional character vector of IV names for loading moments in GMM.
 #'   Names can come from `data` (when provided), outcomes, treatment, and/or covariates implied by `mod`.
-#'   Default is treatment `Z`. Regression moments always use covariates from `mod` as their own IVs.
+#'   Default is all treatment columns in `Z`. Regression moments always use covariates from `mod` as their own IVs.
 #' @param opt Logical. For `method="gmm"`, `TRUE` (default) uses efficient two-step GMM;
 #'   `FALSE` uses one-step GMM with identity weighting.
 #'@examples
@@ -39,9 +39,9 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
 
   if(!is.null(data)){
     if(!is.data.frame(data)){stop("data must be a data.frame")}
-    if(is.character(Z) && length(Z)==1){
-      if(!(Z %in% colnames(data))){stop("Z not found in data")}
-      Z <- data[[Z]]
+    if(is.character(Z)){
+      if(any(!(Z %in% colnames(data)))){stop("Some Z columns are not found in data")}
+      Z <- data[,Z,drop=FALSE]
     }
     if(is.character(Y)){
       if(any(!Y %in% colnames(data))){stop("Some Y columns are not found in data")}
@@ -82,7 +82,7 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
   cov_dat <- if(!is.null(data)) data else Z
 
   if(is.null(mod)){
-    rhs_text <- colnames(Z)[1]
+    rhs_text <- paste(colnames(Z),collapse = "+")
   }else{
     if(!is.character(mod) || length(mod)!=1){stop("mod must be a single character string")}
     mod_txt <- trimws(mod)
@@ -111,11 +111,12 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
   colnames(mm) <- make.names(colnames(mm), unique = TRUE)
   cov_mm <- data.frame(mm, check.names = FALSE)
 
-  z_name <- make.names(colnames(Z)[1])
-  if(!(z_name %in% colnames(cov_mm))){
-    stop("mod must include the treatment variable (first column of Z)")
+  z_names <- make.names(colnames(Z), unique = FALSE)
+  missing_z <- setdiff(z_names, colnames(cov_mm))
+  if(length(missing_z)>0){
+    stop("mod must include all treatment variables in Z")
   }
-  x_names <- setdiff(colnames(cov_mm), z_name)
+  x_names <- setdiff(colnames(cov_mm), z_names)
   n_x <- length(x_names)
   w_names <- colnames(cov_mm)
 
@@ -136,7 +137,7 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
     if(!(nm %in% colnames(iv_pool))){iv_pool[[nm]] <- Z[[nm]]}
   }
   if(is.null(IV_Y)){
-    iv_names_load <- z_name
+    iv_names_load <- z_names
   }else{
     if(!is.character(IV_Y)){stop("IV_Y must be a character vector of variable names")}
     iv_names_load <- unique(IV_Y)
@@ -156,7 +157,7 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
   dat <- cbind(cov_mm,Y)
 
   ld_text <-  paste0("eta =~ 1*", paste0(colnames(Y),collapse = "+"))
-  var_text <- paste0(z_name,"~~",z_name)
+  var_text <- paste0(z_names,"~~",z_names, collapse = "\n")
 
   mod_c <- paste(ld_text,reg_text,var_text,sep="\n")
 
@@ -182,11 +183,11 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
   rg_z <- setNames(rg$z,rg$rhs)
   rg_p <- setNames(rg$pvalue,rg$rhs)
 
-  if(!(z_name %in% names(rg_est))){stop("SEM result does not contain treatment coefficient")}
-  sem_beta_est <- as.numeric(rg_est[z_name])
-  sem_beta_se <- as.numeric(rg_se[z_name])
-  sem_beta_z <- as.numeric(rg_z[z_name])
-  sem_beta_p <- as.numeric(rg_p[z_name])
+  if(any(!z_names %in% names(rg_est))){stop("SEM result does not contain all treatment coefficients")}
+  sem_beta_est <- as.numeric(rg_est[z_names])
+  sem_beta_se <- as.numeric(rg_se[z_names])
+  sem_beta_z <- as.numeric(rg_z[z_names])
+  sem_beta_p <- as.numeric(rg_p[z_names])
 
   if(n_x>0){
     sem_x_est <- as.numeric(rg_est[x_names])
@@ -255,7 +256,8 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
       final_lambda_z <- c(NA,final_lambda_est[-1]/final_lambda_se[-1])
       final_lambda_p <- 2 * (1 - pnorm(abs(final_lambda_z)))   # two‑sided
       b_idx <- (2*n_y+2):(2*n_y+1+n_w)
-      beta_pos <- b_idx[which(w_names==z_name)]
+      beta_pos <- b_idx[match(z_names,w_names)]
+      if(any(is.na(beta_pos))){stop("Internal error: treatment variables not found in GMM coefficient map")}
       final_beta_est <- coef(rec_gmm_opt)[beta_pos]
       final_beta_se <- sqrt(diag(vcov(rec_gmm_opt))[beta_pos])
       final_beta_z <- final_beta_est/final_beta_se
@@ -282,7 +284,7 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
   for (j in 1:n_y) {
     lamdba_name[j] <- paste0("lambda_",j)
   }
-  trt_name <- colnames(Z)[1]
+  trt_name <- z_names
 
   if(n_x>0){
     coef_name <- c(lamdba_name,trt_name,x_names)
@@ -298,7 +300,7 @@ estlatent_ave <- function(mod=NULL,Z,Y,data=NULL,method="sem",IV_Y=NULL,opt=TRUE
     coef_p <- c(final_lambda_p,final_beta_p)
   }
 
-  out_n <- n_y+1+n_x
+  out_n <- n_y + length(trt_name) + n_x
   output <- matrix(NA, nrow = out_n, ncol = 4)
   output[,1] <- coef_est
   output[,2] <- coef_se

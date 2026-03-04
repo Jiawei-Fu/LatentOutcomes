@@ -17,12 +17,12 @@ estlatent_ave(
 \arguments{
 \item{mod}{Optional regression specification for the latent regression.
 Recommended form is RHS-only, e.g. \code{"~Z+x1+x2"}. Also accepts \code{"Y~..."} or \code{"eta~..."}.
-If \code{NULL}, the default model is "~Z", which only contains the treatment variable.}
+If \code{NULL}, the default model uses all columns of \code{Z} on the RHS.}
 
 \item{Z}{Treatment input. Can be:
 a numeric/logical vector,
-a one-column data frame/matrix,
-or a single character column name when \code{data} is provided.}
+a data frame/matrix with one or more columns,
+or character column name(s) when \code{data} is provided.}
 
 \item{Y}{Measured outcomes. Can be:
 a data frame/matrix with 2+ outcome columns,
@@ -36,7 +36,7 @@ and to supply covariates referenced in \code{mod}.}
 
 \item{IV_Y}{Optional character vector of IV names for loading moments in GMM.
 Names can come from \code{data} (when provided), outcomes, treatment, and/or covariates implied by \code{mod}.
-Default is treatment \code{Z}. Regression moments always use covariates from \code{mod} as their own IVs.}
+Default is all treatment columns in \code{Z}. Regression moments always use covariates from \code{mod} as their own IVs.}
 
 \item{opt}{Logical. For \code{method="gmm"}, \code{TRUE} (default) uses efficient two-step GMM;
 \code{FALSE} uses one-step GMM with identity weighting.}

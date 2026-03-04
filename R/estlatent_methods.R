@@ -1,11 +1,9 @@
-#' @method print estlatent
 #' @export
 print.estlatent <- function(x, ...) {
   cat("estlatent object. Use summary(x) to view the coefficient table.\n")
   invisible(x)
 }
 
-#' @method summary estlatent
 #' @export
 summary.estlatent <- function(object, ...) {
   out <- list(
@@ -19,7 +17,6 @@ summary.estlatent <- function(object, ...) {
   out
 }
 
-#' @method print summary.estlatent
 #' @export
 print.summary.estlatent <- function(x, ...) {
   cat("Call:\n")

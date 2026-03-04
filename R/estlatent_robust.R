@@ -2,29 +2,15 @@
 #'
 #' @param mod Optional regression specification for latent regression.
 #'   Recommended form: "~Z+x1+x2". Also accepts "Y~..." or "eta~...".
-#'   If NULL, defaults to "~Z".
-#' @param Z Treatment input: vector/1-col matrix-data.frame, or a single column name when data is provided.
+#'   If NULL, defaults to using all columns in `Z` on the RHS.
+#' @param Z Treatment input: vector, matrix-data.frame with one or more columns,
+#'   or character column name(s) when data is provided.
 #' @param Y Measured outcomes: matrix-data.frame with >=2 columns, or character vector of names when data is provided.
 #' @param data Optional data frame to resolve character inputs and covariates in mod.
 #' @param method "sem" or "gmm".
-#' @param IV_Y Optional loading-IV names for stage-1 loading GMM. Default uses treatment Z only.
+#' @param IV_Y Optional loading-IV names for stage-1 loading GMM. Default uses all treatment columns in `Z`.
 #' @param opt For each GMM stage: TRUE=two-step efficient GMM, FALSE=one-step GMM.
-#'@examples
-#' \dontrun{
-#' data("test_data", package = "LatentOutcomes")  # input data
-#' m1 <- estlatent_ave(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="sem")
-#' summary(m1) # sem model
-#' m2 <- estlatent_ave(mod="~Z", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y2"), opt=TRUE)
-#' summary(m2) # gmm model, using Z and Y2 as IVs for the factor loadings
-#' m3 <- estlatent_ave(mod="~Z+x1+x2", Z="Z", Y=c("Y1","Y2","Y3"), data=test_dat, method="gmm", IV_Y=c("Z","Y1","Y2","Y3"), opt=TRUE) # control covariates x1 and x2, using Z, Y1, Y2, and Y3 as IVs for the factor loadings
-#' summary(m3)
-#'}
-#'@references Fu, Jiawei, and Donald P. Green. "Causal Inference for Experiments with Latent Outcomes: Key Results and Their Implications for Design and Analysis." (2025).
-#'@import lavaan
-#'@import momentfit
-#'@importFrom stats pnorm printCoefmat
-#'@export
-
+#' @export
 estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y = NULL, opt = TRUE) {
   .pinv <- function(M, tol = 1e-8) {
     s <- svd(M)
@@ -92,9 +78,9 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
 
   if (!is.null(data)) {
     if (!is.data.frame(data)) stop("data must be a data.frame")
-    if (is.character(Z) && length(Z) == 1) {
-      if (!(Z %in% colnames(data))) stop("Z not found in data")
-      Z <- data[[Z]]
+    if (is.character(Z)) {
+      if (any(!(Z %in% colnames(data)))) stop("Some Z columns are not found in data")
+      Z <- data[, Z, drop = FALSE]
     }
     if (is.character(Y)) {
       if (any(!Y %in% colnames(data))) stop("Some Y columns are not found in data")
@@ -130,7 +116,7 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
   cov_dat <- if (!is.null(data)) data else Z
 
   if (is.null(mod)) {
-    rhs_text <- colnames(Z)[1]
+    rhs_text <- paste(colnames(Z), collapse = "+")
   } else {
     if (!is.character(mod) || length(mod) != 1) stop("mod must be a single character string")
     mod_txt <- trimws(mod)
@@ -159,10 +145,11 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
   colnames(mm) <- make.names(colnames(mm), unique = TRUE)
   cov_mm <- data.frame(mm, check.names = FALSE)
 
-  z_name <- make.names(colnames(Z)[1])
-  if (!(z_name %in% colnames(cov_mm))) stop("mod must include the treatment variable (first column of Z)")
+  z_names <- make.names(colnames(Z), unique = FALSE)
+  missing_z <- setdiff(z_names, colnames(cov_mm))
+  if (length(missing_z) > 0) stop("mod must include all treatment variables in Z")
 
-  x_names <- setdiff(colnames(cov_mm), z_name)
+  x_names <- setdiff(colnames(cov_mm), z_names)
   n_x <- length(x_names)
   w_names <- colnames(cov_mm)
 
@@ -180,7 +167,7 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
     if (!(nm %in% colnames(iv_pool))) iv_pool[[nm]] <- Z[[nm]]
   }
   if (is.null(IV_Y)) {
-    iv_names_load <- z_name
+    iv_names_load <- z_names
   } else {
     if (!is.character(IV_Y)) stop("IV_Y must be a character vector of variable names")
     iv_names_load <- unique(IV_Y)
@@ -201,7 +188,7 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
   reg_text <- paste0("eta ~ ", paste(colnames(cov_mm), collapse = "+"))
   dat_sem <- cbind(cov_mm, Y)
   ld_text <- paste0("eta =~ 1*", paste0(colnames(Y), collapse = "+"))
-  var_text <- paste0(z_name, "~~", z_name)
+  var_text <- paste0(z_names, "~~", z_names, collapse = "\n")
   mod_c <- paste(ld_text, reg_text, var_text, sep = "\n")
 
   sem_tmp <- sem(mod_c, data = dat_sem)
@@ -223,11 +210,11 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
   rg_z <- setNames(rg$z, rg$rhs)
   rg_p <- setNames(rg$pvalue, rg$rhs)
 
-  if (!(z_name %in% names(rg_est))) stop("SEM result does not contain treatment coefficient")
-  sem_beta_est <- as.numeric(rg_est[z_name])
-  sem_beta_se <- as.numeric(rg_se[z_name])
-  sem_beta_z <- as.numeric(rg_z[z_name])
-  sem_beta_p <- as.numeric(rg_p[z_name])
+  if (any(!z_names %in% names(rg_est))) stop("SEM result does not contain all treatment coefficients")
+  sem_beta_est <- as.numeric(rg_est[z_names])
+  sem_beta_se <- as.numeric(rg_se[z_names])
+  sem_beta_z <- as.numeric(rg_z[z_names])
+  sem_beta_p <- as.numeric(rg_p[z_names])
 
   if (n_x > 0) {
     sem_x_est <- as.numeric(rg_est[x_names])
@@ -368,7 +355,8 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
 
     b_hat <- theta2_hat[2:(1 + n_w)]
     b_se <- se_all[(p1 + 2):p_all]
-    b_idx <- which(w_names == z_name)
+    b_idx <- match(z_names, w_names)
+    if (any(is.na(b_idx))) stop("Internal error: treatment variables not found in GMM coefficient map")
     final_beta_est <- b_hat[b_idx]
     final_beta_se <- b_se[b_idx]
     final_beta_z <- final_beta_est / final_beta_se
@@ -384,7 +372,7 @@ estlatent_robust <- function(mod = NULL, Z, Y, data = NULL, method = "sem", IV_Y
   }
 
   lambda_name <- paste0("lambda_", seq_len(n_y))
-  trt_name <- colnames(Z)[1]
+  trt_name <- z_names
 
   if (n_x > 0) {
     coef_name <- c(lambda_name, trt_name, x_names)
